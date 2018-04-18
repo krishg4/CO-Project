@@ -12,6 +12,7 @@
 #define MAX_CACHE_SIZE 10240
 #define CACHE_MISS_DELAY 10 // 10 cycle cache miss penalty
 #define MAX_STAGES 5
+#define SIMULATION_RUNS 18 //We're running the simulation 18 times, 9 with branch taken and 9 without
 
 // init the simulator
 void iplc_sim_init(int index, int blocksize, int assoc);
@@ -543,20 +544,30 @@ int main()
         exit(-1);
     }
     
-    printf("Enter Cache Size (index), Blocksize and Level of Assoc \n");
-    scanf( "%d %d %d", &index, &blocksize, &assoc );
-    
-    printf("Enter Branch Prediction: 0 (NOT taken), 1 (TAKEN): ");
-    scanf("%d", &branch_predict_taken );
-    
-    iplc_sim_init(index, blocksize, assoc);
-    
-    while (fgets(buffer, 80, trace_file) != NULL) {
-        iplc_sim_parse_instruction(buffer);
-        if (dump_pipeline)
-            iplc_sim_dump_pipeline();
-    }
-    
-    iplc_sim_finalize();
+	//Run the simulation 18 times, with 9 times being with branch prediction and 9 without.
+	for (int i = 0; i < SIMULATION_RUNS; i++)
+	{
+		printf("Enter Cache Size (index), Blocksize and Level of Assoc \n");
+		scanf("%d %d %d", &index, &blocksize, &assoc);
+
+		printf("Enter Branch Prediction: 0 (NOT taken), 1 (TAKEN): ");
+		scanf("%d", &branch_predict_taken);
+
+		iplc_sim_init(index, blocksize, assoc);
+
+		//Set the file pointer to the beginning of the file for each simulation.
+		if (fseek(trace_file, 0, SEEK_SET) != 0)
+		{
+			printf("fseek failed to reset file\n");
+			exit(-1);
+		}
+		while (fgets(buffer, 80, trace_file) != NULL) {
+			iplc_sim_parse_instruction(buffer);
+			if (dump_pipeline)
+				iplc_sim_dump_pipeline();
+		}
+
+		iplc_sim_finalize();
+	}
     return 0;
 }
