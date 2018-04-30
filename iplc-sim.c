@@ -38,13 +38,18 @@ void iplc_sim_process_pipeline_nop();
 // Outout performance results
 void iplc_sim_finalize();
 
+typedef struct associativity
+{
+    int valid; //valid bit
+    int tag;
+} assoc_t;
+
+
 typedef struct cache_line
 {
-    // Your data structures for implementing your cache should include:
-    // a valid bit
-    // a tag
-    // a method for handling varying levels of associativity
-    // a method for selecting which item in the cache is going to be replaced
+    assoc_t *assoc;
+    int     *replacement;
+
 } cache_line_t;
 
 cache_line_t *cache=NULL;
@@ -167,8 +172,19 @@ void iplc_sim_init(int index, int blocksize, int assoc)
     cache = (cache_line_t *) malloc((sizeof(cache_line_t) * 1<<index));
     
     // Dynamically create our cache based on the information the user entered
-    for (i = 0; i < (1<<index); i++) {
+    for (i = 0; i < (1<<index); i++) 
+    {
+        cache[i].assoc = (assoc_t *)malloc((sizeof(assoc_t) * assoc));
+        cache[i].replace = (int *)malloc((sizeof(int) * assoc));
+
+        for (int k = 0; k < assoc; ++k)
+        {
+            cache[i].assoc[k].valid = 0;
+            cache[i].assoc[k].tag = 0;
+            cache[i].replace[k] = k;
+        }
     }
+    
     
     // init the pipeline -- set all data to zero and instructions to NOP
     for (i = 0; i < MAX_STAGES; i++) {
@@ -181,18 +197,62 @@ void iplc_sim_init(int index, int blocksize, int assoc)
  * iplc_sim_trap_address() determined this is not in our cache.  Put it there
  * and make sure that is now our Most Recently Used (MRU) entry.
  */
+//this is for moves places in the same index, sorts it by most recent, used to for efficiency and clean code up
+
+void percolate_up(int index, int start)
+{
+    int i = 0;
+    for(i = 0; i < cache_assoc-1; i++)
+    {
+        cache[index].assoc[i] = cache[index].assoc[i+1];
+        cache[index].replace[i] = cache[index].replace[i+1];
+    } 
+}
 void iplc_sim_LRU_replace_on_miss(int index, int tag)
 {
-    /* You must implement this function */
+    int i = 0;
+
+    //percolate up
+    percolate_up(index);
+
+    cache[index].assoc[cache_assoc-1].tag = tag;
+    cache[index].assoc[cache_assoc-1].valid = 1;
+    cache[index].replace[cache_assoc-1] = 0;
+
+    cache_miss++;
+    cache_access++;
+}
+void perc_up(int index, int start)
+{
+    int j=0;
+
+    for (j = start; (j < cache_assoc); j++)
+    {
+        if (j != 0)
+            cache[index].replace[j - 1] = cache[index].replace[j];
+    }
 }
 
 /*
  * iplc_sim_trap_address() determined the entry is in our cache.  Update its
  * information in the cache.
  */
+
 void iplc_sim_LRU_update_on_hit(int index, int assoc_entry)
 {
-    /* You must implement this function */
+    int i = 0;
+    //move up on postion
+    while(cache[index].replace[i] != assoc_entry && i < cache_assoc)
+    {
+        i++;
+    }
+    // percolate up again but this function a little different for this case as
+    //im not updating
+    perc_up(index, i + 1 );
+    cache[index].replace[cache_assoc - 1] = assoc_entry;
+
+    cache_hit++;
+    cache_access++;
 }
 
 /*
@@ -210,6 +270,30 @@ int iplc_sim_trap_address(unsigned int address)
     // Call the appropriate function for a miss or hit
 
     /* expects you to return 1 for hit, 0 for miss */
+    int mask = (1 << cache_index) - 1;
+    index = address >> cache_blockoffsetbits & mask;
+    tag = address >> (cache_index + cache_blockoffsetbits);
+
+    for (i = 0; i < cache_assoc; i++)
+    {
+        if (cache[index].assoc[i].tag == tag)
+        {
+            hit = 1;
+            //this is a hit
+            iplc_sim_LRU_update_on_hit(index, i);
+            break; 
+            //its done, get out of it
+        }
+    }
+
+    if (hit == 0)
+    {
+        //its missing, like it didnt hit so now call the replace on miss
+        iplc_sim_LRU_replace_on_miss(index, tag);
+
+    }
+	
+	
     return hit;
 }
 
